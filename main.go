@@ -12,10 +12,15 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+type RoundData struct {
+	R uint64
+	S *big.Int
+}
+
 func main() {
 	app := &cli.App{
 		Name:                 "PandaView",
-		Usage:                "A view to collection pool data",
+		Usage:                "An offchain system for data collection",
 		EnableBashCompletion: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -28,19 +33,37 @@ func main() {
 				Value: "https://bsc-dataseed2.defibit.io/",
 				Usage: "RPC service address",
 			},
+			&cli.StringFlag{
+				Name:  "datadir",
+				Value: `data/`,
+				Usage: "output data directory",
+			},
+			&cli.DurationFlag{
+				Name:  "duration",
+				Value: 2 * time.Hour,
+				Usage: "data refresh duration",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			contractAddress := common.HexToAddress(c.String("aggregator"))
 			provider := c.String("provider")
+			duration := c.Duration("duration")
+			datadir := c.String("datadir")
 			log.Println("Aggregator Contract:", contractAddress)
 			log.Println("Provider:", provider)
+			log.Println("Refresh Duration:", duration)
+			log.Println("Data Directory:", datadir)
 
-			updateView(provider, contractAddress)
-			ticker := time.NewTicker(2 * time.Hour)
+			if _, err := os.Stat(datadir); os.IsNotExist(err) {
+				os.Mkdir(datadir, os.ModeDir|os.ModePerm)
+			}
+
+			updateView(provider, contractAddress, datadir)
+			ticker := time.NewTicker(duration)
 			for {
 				select {
 				case <-ticker.C:
-					updateView(provider, contractAddress)
+					updateView(provider, contractAddress, datadir)
 				}
 			}
 		},
@@ -53,7 +76,7 @@ func main() {
 
 }
 
-func updateView(provider string, address common.Address) {
+func updateView(provider string, address common.Address, datadir string) {
 	// create connection
 	client, err := ethclient.Dial(provider)
 	if err != nil {
@@ -76,13 +99,12 @@ func updateView(provider string, address common.Address) {
 			log.Println(err)
 			return
 		}
-
-		handlePool(pool, client)
+		handlePool(pool, client, datadir)
 		poolId.Add(poolId, common.Big1)
 	}
 }
 
-func handlePool(address common.Address, client *ethclient.Client) {
+func handlePool(address common.Address, client *ethclient.Client, datadir string) {
 	pool, err := NewIOptionPool(address, client)
 	if err != nil {
 		log.Println("PandaView: NewAggregateUpdater failed:", err)
@@ -103,16 +125,11 @@ func handlePool(address common.Address, client *ethclient.Client) {
 
 	// handle round data from options
 	for k := range options {
-		handleOption(options[k], client)
+		handleOption(options[k], client, datadir)
 	}
 }
 
-type RoundData struct {
-	R uint64
-	S *big.Int
-}
-
-func handleOption(address common.Address, client *ethclient.Client) {
+func handleOption(address common.Address, client *ethclient.Client, datadir string) {
 	var rounds []RoundData
 	option, err := NewIOption(address, client)
 	currentRound, err := option.GetRound(nil)
@@ -140,7 +157,7 @@ func handleOption(address common.Address, client *ethclient.Client) {
 		rounds = append(rounds, RoundData{r, accPremiumShare})
 	}
 
-	file, err := os.Create(address.String() + ".json")
+	file, err := os.Create(datadir + address.String() + ".json")
 	if err != nil {
 		log.Fatal(err)
 	}
