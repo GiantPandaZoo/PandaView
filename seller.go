@@ -15,6 +15,7 @@ import (
 type RoundData struct {
 	R uint64
 	S *big.Int
+	D int64
 }
 
 // extractPools
@@ -98,7 +99,7 @@ func extractOption(address common.Address, client *ethclient.Client, datadir str
 		if err != nil {
 			log.Fatal(err)
 		}
-		rounds = append(rounds, RoundData{r, accPremiumShare})
+		rounds = append(rounds, RoundData{r, accPremiumShare, expiryDate.Int64()})
 	}
 
 	file, err := os.Create(datadir + address.String() + ".json")
