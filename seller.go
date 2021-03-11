@@ -13,9 +13,9 @@ import (
 
 // RoundData
 type RoundData struct {
-	R uint64
-	S *big.Int
-	D int64
+	R uint64   // round
+	S *big.Int // accumulated share
+	D int64    // date
 }
 
 // extractPools
